@@ -79,7 +79,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.3,
+          childAspectRatio: 1.15,
           children: [
             StatCard(
               icon: Icons.play_circle_fill,
