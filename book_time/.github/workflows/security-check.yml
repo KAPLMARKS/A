@@ -1,0 +1,57 @@
+name: Security Check
+
+on:
+  pull_request:
+  push:
+    branches: [ main, master, develop ]
+  schedule:
+    # Run weekly security check
+    - cron: '0 0 * * 0'
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for secret scanning
+
+      - name: Check for secrets in code
+        run: |
+          echo "🔍 Scanning for secrets..."
+          
+          # Check for common secret patterns (exclude docs and security scripts)
+          if git grep -iE "api[_-]?key\s*[:=]" -- ':!*.md' ':!SECURITY.md' ':!CONTRIBUTING.md' ':!scripts/*' ':!.github/**'; then
+            echo "❌ Found potential API keys"
+            exit 1
+          fi
+          
+          if git grep -iE "secret\s*[:=]" -- ':!*.md' ':!SECURITY.md' ':!CONTRIBUTING.md' ':!scripts/*' ':!.github/**'; then
+            echo "❌ Found potential secrets"
+            exit 1
+          fi
+          
+          if git grep -iE "token\s*[:=]" -- ':!*.md' ':!SECURITY.md' ':!CONTRIBUTING.md' ':!scripts/*' ':!.github/**'; then
+            echo "❌ Found potential tokens"
+            exit 1
+          fi
+          
+          # Check for sensitive file extensions (only files tracked by git)
+          SENSITIVE_FILES=$(git ls-files | grep -E '\.(env|key|pem|p8|p12|cer|mobileprovision|keystore|jks)$' | grep -v -E '(SECURITY|CONTRIBUTING|scripts|\.github)' || true)
+          
+          if [ ! -z "$SENSITIVE_FILES" ]; then
+            echo "❌ Found sensitive files tracked by git:"
+            echo "$SENSITIVE_FILES"
+            exit 1
+          fi
+          
+          echo "✅ No secrets detected"
+
+      - name: Check git history for secrets
+        run: |
+          echo "🔍 Checking git history..."
+          if git log --all --source --full-history -S "api_key" -S "API_KEY" -S "secret" -S "SECRET" -S "token" -S "TOKEN" -S "password" -S "PASSWORD" --format="%H %s" | head -5; then
+            echo "⚠️  Found commits with potential secrets in history"
+            echo "Please review these commits and remove secrets if found"
+          fi
