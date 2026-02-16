@@ -22,7 +22,6 @@ class _GameScreenState extends State<GameScreen>
   final GameService _game = GameService();
   late final Ticker _ticker;
   Duration _lastTick = Duration.zero;
-  bool _initialized = false;
 
   @override
   void initState() {
@@ -38,7 +37,7 @@ class _GameScreenState extends State<GameScreen>
 
   // ---- Game loop tick ----
   void _onTick(Duration elapsed) {
-    if (!_initialized) {
+    if (!_game.isReady) {
       _lastTick = elapsed;
       return;
     }
@@ -72,60 +71,66 @@ class _GameScreenState extends State<GameScreen>
   // ---- Build ----
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      autofocus: true,
-      onKeyEvent: _onKeyEvent,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final size = Size(constraints.maxWidth, constraints.maxHeight);
+    return Scaffold(
+      body: Focus(
+        autofocus: true,
+        onKeyEvent: _onKeyEvent,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final size = Size(constraints.maxWidth, constraints.maxHeight);
 
-          if (!_initialized) {
+            // (Re-)initialise whenever we get a valid size
             _game.initialize(size);
-            _initialized = true;
-          }
 
-          return DefaultTextStyle(
-            style: const TextStyle(decoration: TextDecoration.none),
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTapDown: (_) => _handleTap(),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Game canvas
-                  RepaintBoundary(
-                    child: CustomPaint(
-                      painter: GamePainter(_game),
-                      size: size,
+            if (!_game.isReady) {
+              return const SizedBox.expand(
+                child: ColoredBox(color: Color(0xFF87CEEB)),
+              );
+            }
+
+            return DefaultTextStyle(
+              style: const TextStyle(decoration: TextDecoration.none),
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTapDown: (_) => _handleTap(),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // Game canvas
+                    RepaintBoundary(
+                      child: CustomPaint(
+                        painter: GamePainter(_game),
+                        size: size,
+                      ),
                     ),
-                  ),
 
-                  // HUD during gameplay
-                  if (_game.state == GameState.playing) ...[
-                    ScoreDisplay(score: _game.score),
-                    _buildHomeButton(),
+                    // HUD during gameplay
+                    if (_game.state == GameState.playing) ...[
+                      ScoreDisplay(score: _game.score),
+                      _buildHomeButton(),
+                    ],
+
+                    // Menu overlay
+                    if (_game.state == GameState.menu)
+                      MenuOverlay(highScore: _game.highScore),
+
+                    // Game Over overlay (handles its own taps via buttons)
+                    if (_game.state == GameState.gameOver)
+                      GameOverOverlay(
+                        score: _game.score,
+                        highScore: _game.highScore,
+                        canRestart: _game.canRestart,
+                        onRestart: () {
+                          if (_game.canRestart) _game.startGame();
+                        },
+                        onMenu: () => _game.goToMenu(),
+                      ),
                   ],
-
-                  // Menu overlay
-                  if (_game.state == GameState.menu)
-                    MenuOverlay(highScore: _game.highScore),
-
-                  // Game Over overlay (handles its own taps)
-                  if (_game.state == GameState.gameOver)
-                    GameOverOverlay(
-                      score: _game.score,
-                      highScore: _game.highScore,
-                      canRestart: _game.canRestart,
-                      onRestart: () {
-                        if (_game.canRestart) _game.startGame();
-                      },
-                      onMenu: () => _game.goToMenu(),
-                    ),
-                ],
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

@@ -24,6 +24,7 @@ class GamePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (!gameService.isReady || size.isEmpty) return;
     _drawSky(canvas, size);
     _drawClouds(canvas, size);
     _drawPipes(canvas, size);

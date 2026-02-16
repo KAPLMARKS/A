@@ -9,8 +9,8 @@ import '../utils/app_logger.dart';
 
 /// Core game logic: physics, pipe spawning, collision detection, scoring.
 class GameService {
-  late GameConfig config;
-  late PlaneModel plane;
+  GameConfig? _config;
+  PlaneModel? _plane;
 
   final List<PipeModel> pipes = [];
   final Random _random = Random();
@@ -24,33 +24,54 @@ class GameService {
   double _totalTime = 0.0;
   double _menuBobTime = 0.0;
   double _gameOverCooldown = 0.0;
+  double _gracePeriod = 0.0;
 
-  // ---- Public getters used by the painter ----
+  // ---- Public getters ----
+  GameConfig get config => _config!;
+  PlaneModel get plane => _plane!;
+  bool get isReady => _config != null && _plane != null;
   double get groundScrollOffset => _groundScrollOffset;
   double get totalTime => _totalTime;
   bool get canRestart => _gameOverCooldown <= 0;
 
   /// Initialise (or re‑initialise) with the current screen size.
   void initialize(Size screenSize) {
-    config = GameConfig(screenSize);
-    plane = PlaneModel(x: config.planeX, y: config.planeStartY);
-    AppLogger.info('Game initialised – screen ${screenSize.width}×${screenSize.height}');
+    if (screenSize.width <= 0 || screenSize.height <= 0) return;
+
+    final sizeChanged =
+        _config == null ||
+        (_config!.width - screenSize.width).abs() > 1 ||
+        (_config!.height - screenSize.height).abs() > 1;
+
+    if (!sizeChanged) return;
+
+    _config = GameConfig(screenSize);
+    _plane = PlaneModel(x: config.planeX, y: config.planeStartY);
+    state = GameState.menu;
+    pipes.clear();
+    AppLogger.info(
+      'Game initialised – screen ${screenSize.width.toStringAsFixed(0)}'
+      '×${screenSize.height.toStringAsFixed(0)}',
+    );
   }
 
   /// Start a new game round.
   void startGame() {
+    if (!isReady) return;
     state = GameState.playing;
     score = 0;
     pipes.clear();
     plane.reset(config.planeX, config.planeStartY);
-    plane.velocity = config.jumpVelocity * 0.6;
-    _timeSinceLastPipe = config.pipeSpawnInterval * 0.65;
+    plane.velocity = config.jumpVelocity * 0.5;
+    _timeSinceLastPipe = config.pipeSpawnInterval * 0.6;
     _gameOverCooldown = 0.0;
+    _gracePeriod = 0.4; // ignore collisions for 0.4 s
     AppLogger.info('Game started');
   }
 
   /// Return to the main menu.
   void goToMenu() {
+    if (!isReady) return;
     state = GameState.menu;
     score = 0;
     pipes.clear();
@@ -61,6 +82,7 @@ class GameService {
 
   /// Called on player tap during gameplay.
   void jump() {
+    if (!isReady) return;
     if (state == GameState.playing) {
       plane.velocity = config.jumpVelocity;
     }
@@ -70,6 +92,7 @@ class GameService {
   // Main update – called every frame
   // ----------------------------------------------------------------
   void update(double dt) {
+    if (!isReady) return;
     dt = dt.clamp(0.0, 0.05);
     if (dt == 0) return;
 
@@ -92,7 +115,8 @@ class GameService {
   void _updateMenu(double dt) {
     _groundScrollOffset += config.pipeSpeed * dt * 0.4;
     _menuBobTime += dt;
-    plane.y = config.planeStartY + sin(_menuBobTime * 2.5) * 15.0 * config.scale;
+    plane.y =
+        config.planeStartY + sin(_menuBobTime * 2.5) * 15.0 * config.scale;
     plane.rotation = sin(_menuBobTime * 2.5) * 0.08;
   }
 
@@ -100,9 +124,13 @@ class GameService {
     // Ground scrolling
     _groundScrollOffset += config.pipeSpeed * dt;
 
+    // Grace period countdown
+    if (_gracePeriod > 0) _gracePeriod -= dt;
+
     // Plane physics
     plane.velocity += config.gravity * dt;
-    plane.velocity = plane.velocity.clamp(-config.maxFallSpeed, config.maxFallSpeed);
+    plane.velocity =
+        plane.velocity.clamp(-config.maxFallSpeed, config.maxFallSpeed);
     plane.y += plane.velocity * dt;
 
     // Smooth rotation towards velocity direction
@@ -127,8 +155,8 @@ class GameService {
     }
     pipes.removeWhere((p) => p.rightEdge < -20);
 
-    // Collision
-    if (_checkCollision()) {
+    // Collision (skip during grace period)
+    if (_gracePeriod <= 0 && _checkCollision()) {
       _triggerGameOver();
     }
   }
@@ -138,7 +166,8 @@ class GameService {
 
     // Plane falls to ground after crash
     plane.velocity += config.gravity * dt;
-    plane.velocity = plane.velocity.clamp(-config.maxFallSpeed, config.maxFallSpeed);
+    plane.velocity =
+        plane.velocity.clamp(-config.maxFallSpeed, config.maxFallSpeed);
     plane.y += plane.velocity * dt;
 
     final groundLimit = config.groundY - config.planeHeight / 2;
@@ -158,7 +187,8 @@ class GameService {
 
   void _spawnPipe() {
     final gapCenter = config.pipeMinGapCenter +
-        _random.nextDouble() * (config.pipeMaxGapCenter - config.pipeMinGapCenter);
+        _random.nextDouble() *
+            (config.pipeMaxGapCenter - config.pipeMinGapCenter);
 
     pipes.add(PipeModel(
       x: config.width + 10,
@@ -179,14 +209,16 @@ class GameService {
     final planeTop = plane.y - config.planeHeight / 2 + m;
     final planeBottom = plane.y + config.planeHeight / 2 - m;
 
-    // Ground / ceiling
+    // Ground
     if (planeBottom >= config.groundY) return true;
+    // Ceiling
     if (planeTop <= 0) return true;
 
     // Pipes
     for (final pipe in pipes) {
       if (planeRight > pipe.x && planeLeft < pipe.rightEdge) {
-        if (planeTop < pipe.topPipeBottom || planeBottom > pipe.bottomPipeTop) {
+        if (planeTop < pipe.topPipeBottom ||
+            planeBottom > pipe.bottomPipeTop) {
           return true;
         }
       }
@@ -200,7 +232,7 @@ class GameService {
 
   void _triggerGameOver() {
     state = GameState.gameOver;
-    _gameOverCooldown = 0.6;
+    _gameOverCooldown = 0.8;
     if (score > highScore) {
       highScore = score;
     }
