@@ -115,55 +115,94 @@ class PhysicsEngine {
     List<ObstacleModel> obstacles,
   ) {
     int points = 0;
+    const separationMargin = 0.5;
+    const minBounceSpeed = 80.0;
 
-    for (final obstacle in obstacles) {
-      if (!_isBallIntersectingRect(ball, obstacle.rect)) continue;
+    // Run up to 3 iterations to resolve multi-obstacle penetrations
+    for (int iteration = 0; iteration < 3; iteration++) {
+      bool hadCollision = false;
 
-      // Determine collision side
-      final ballCenter = ball.position;
-      final closestX = ballCenter.dx.clamp(obstacle.rect.left, obstacle.rect.right);
-      final closestY = ballCenter.dy.clamp(obstacle.rect.top, obstacle.rect.bottom);
+      for (final obstacle in obstacles) {
+        if (!_isBallIntersectingRect(ball, obstacle.rect)) continue;
 
-      final dx = ballCenter.dx - closestX;
-      final dy = ballCenter.dy - closestY;
-      final dist = sqrt(dx * dx + dy * dy);
+        final ballCenter = ball.position;
+        final closestX =
+            ballCenter.dx.clamp(obstacle.rect.left, obstacle.rect.right);
+        final closestY =
+            ballCenter.dy.clamp(obstacle.rect.top, obstacle.rect.bottom);
 
-      if (dist >= ball.radius) continue;
+        final dx = ballCenter.dx - closestX;
+        final dy = ballCenter.dy - closestY;
+        final dist = sqrt(dx * dx + dy * dy);
 
-      // Resolve penetration
-      final overlap = ball.radius - dist;
-      if (dist > 0) {
-        final nx = dx / dist;
-        final ny = dy / dist;
+        if (dist >= ball.radius) continue;
+
+        double nx, ny;
+
+        if (dist > 0.001) {
+          nx = dx / dist;
+          ny = dy / dist;
+        } else {
+          // Ball center is inside the obstacle — find nearest edge to push out
+          final distTop = (ballCenter.dy - obstacle.rect.top).abs();
+          final distBottom = (obstacle.rect.bottom - ballCenter.dy).abs();
+          final distLeft = (ballCenter.dx - obstacle.rect.left).abs();
+          final distRight = (obstacle.rect.right - ballCenter.dx).abs();
+          final minDist =
+              [distTop, distBottom, distLeft, distRight].reduce(min);
+
+          if (minDist == distTop) {
+            nx = 0;
+            ny = -1;
+          } else if (minDist == distBottom) {
+            nx = 0;
+            ny = 1;
+          } else if (minDist == distLeft) {
+            nx = -1;
+            ny = 0;
+          } else {
+            nx = 1;
+            ny = 0;
+          }
+        }
+
+        // Push ball out with a small margin to prevent re-entry
+        final overlap = ball.radius - dist + separationMargin;
         ball.position = Offset(
           ball.position.dx + nx * overlap,
           ball.position.dy + ny * overlap,
         );
 
-        // Reflect velocity
+        // Reflect velocity along collision normal
         final dot = ball.velocity.dx * nx + ball.velocity.dy * ny;
-        ball.velocity = Offset(
-          (ball.velocity.dx - 2 * dot * nx) * bounceFriction,
-          (ball.velocity.dy - 2 * dot * ny) * bounceFriction,
-        );
-      } else {
-        // Ball center is inside obstacle - push out vertically
-        ball.position = Offset(
-          ball.position.dx,
-          obstacle.rect.top - ball.radius,
-        );
-        ball.velocity = Offset(
-          ball.velocity.dx,
-          -ball.velocity.dy.abs() * bounceFriction,
-        );
+        if (dot < 0) {
+          ball.velocity = Offset(
+            (ball.velocity.dx - 2 * dot * nx) * bounceFriction,
+            (ball.velocity.dy - 2 * dot * ny) * bounceFriction,
+          );
+        }
+
+        // Ensure minimum bounce speed so ball escapes the obstacle
+        final normalSpeed = ball.velocity.dx * nx + ball.velocity.dy * ny;
+        if (normalSpeed < minBounceSpeed) {
+          final boost = minBounceSpeed - normalSpeed;
+          ball.velocity = Offset(
+            ball.velocity.dx + nx * boost,
+            ball.velocity.dy + ny * boost,
+          );
+        }
+
+        hadCollision = true;
+
+        if (!obstacle.wasHit) {
+          obstacle.wasHit = true;
+          points += 10;
+          AppLogger.gameEvent('Obstacle hit! +10 points');
+        }
+        points += 1;
       }
 
-      if (!obstacle.wasHit) {
-        obstacle.wasHit = true;
-        points += 10;
-        AppLogger.gameEvent('Obstacle hit! +10 points');
-      }
-      points += 1;
+      if (!hadCollision) break;
     }
 
     return points;
