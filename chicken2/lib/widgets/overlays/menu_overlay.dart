@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../screens/encyclopedia_screen.dart';
 import '../common_button.dart';
 
 /// Main menu overlay shown before the game starts.
@@ -59,6 +60,8 @@ class MenuOverlay extends StatelessWidget {
                 ),
                 const SizedBox(height: 36),
                 CommonButton(label: 'PLAY', onTap: onPlay),
+                const SizedBox(height: 12),
+                _EncyclopediaButton(),
                 if (highScore > 0) ...[
                   const SizedBox(height: 20),
                   Text(
@@ -106,6 +109,46 @@ class MenuOverlay extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _EncyclopediaButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: () => Navigator.push(
+        context,
+        PageRouteBuilder(
+          transitionDuration: const Duration(milliseconds: 350),
+          reverseTransitionDuration: const Duration(milliseconds: 300),
+          pageBuilder: (_, __, ___) => const EncyclopediaScreen(),
+          transitionsBuilder: (_, animation, __, child) {
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.08),
+                  end: Offset.zero,
+                ).animate(CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOut,
+                )),
+                child: child,
+              ),
+            );
+          },
+        ),
+      ),
+      icon: const Text('📖', style: TextStyle(fontSize: 20)),
+      label: const Text('Encyclopedia'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.white,
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.4)),
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
       ),
     );
   }
